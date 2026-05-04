@@ -39,11 +39,7 @@ MAKE_HOOK_MATCH(
 
     std::string sceneName_str = std::string(sceneName);
 
-    bool is_MainMenu        = sceneName_str == "MainMenu";
-    bool is_ShaderWarmup    = sceneName_str == "ShaderWarmup";
-    bool is_HealthWarning   = sceneName_str == "HealthWarning";
     bool is_GameCore        = sceneName_str == "GameCore";
-    bool is_EmptyTransition = sceneName_str == "EmptyTransition";
 
     // Actual function call
     bool ret = SceneManager_SetActiveScene(scene);
@@ -61,8 +57,16 @@ MAKE_HOOK_MATCH(
     if(ret == true){
         INFO("New scene name: {}", sceneName_str);
 
-        // Initialize things on every scene change
-        modManager._InitializeOculusHands();
+        if (modManager.shouldInitializeHandsForScene(sceneName_str))
+        {
+            INFO("Scene '{}' is valid for hand initialization", sceneName_str);
+            modManager._InitializeOculusHands();
+        }
+        else
+        {
+            INFO("Skipping hand initialization for scene '{}'", sceneName_str);
+            modManager._Destroy_OculusHands();
+        }
 
         modManager.is_scene_GameCore = is_GameCore;
     }

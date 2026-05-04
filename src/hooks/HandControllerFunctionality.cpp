@@ -28,6 +28,13 @@ MAKE_HOOK_MATCH(
     void,
     GlobalNamespace::VRController *self)
 {
+    if (!self || !self->_vrPlatformHelper || !self->_viewAnchorTransform)
+    {
+        INFO("VRController_Update: missing required controller references; skipping hand override");
+        VRController_Update(self);
+        return;
+    }
+
     bool isEitherHandTracked = modManager.getEitherHandIsTracked();
 
     if (modManager.should_RefreshControllersReference)
@@ -63,17 +70,25 @@ MAKE_HOOK_MATCH(
     }
 
     // Find position & rotation
-    UnityEngine::Transform *hand_bone_tranform;
+    UnityEngine::Transform *hand_bone_tranform = nullptr;
     bool flip_saber = false;
     if (self->node == UnityEngine::XR::XRNode::RightHand)
     {
-        hand_bone_tranform = modManager.rightOVRSkeleton->_bones->get_Item((int)GlobalNamespace::OVRSkeleton::BoneId::Hand_WristRoot)->get_Transform();
+        if (!modManager.rightOVRSkeleton || !modManager.rightOVRSkeleton->_bones)
+            return;
+        auto bone = modManager.rightOVRSkeleton->_bones->get_Item((int)GlobalNamespace::OVRSkeleton::BoneId::Hand_WristRoot);
+        hand_bone_tranform = bone ? bone->get_Transform() : nullptr;
     }
     else
     {
-        hand_bone_tranform = modManager.leftOVRSkeleton->_bones->get_Item((int)GlobalNamespace::OVRSkeleton::BoneId::Hand_WristRoot)->get_Transform();
+        if (!modManager.leftOVRSkeleton || !modManager.leftOVRSkeleton->_bones)
+            return;
+        auto bone = modManager.leftOVRSkeleton->_bones->get_Item((int)GlobalNamespace::OVRSkeleton::BoneId::Hand_WristRoot);
+        hand_bone_tranform = bone ? bone->get_Transform() : nullptr;
         flip_saber = true;
     }
+    if (!hand_bone_tranform)
+        return;
     auto targ_rot = hand_bone_tranform->get_rotation() * UnityEngine::Quaternion::Euler(flip_saber ? 180.f : 0.0f, 90.0f, 0.0f);
     auto targ_pos = hand_bone_tranform->get_position() + self->_viewAnchorTransform->get_forward() * +0.175f;
 
