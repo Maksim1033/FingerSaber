@@ -27,6 +27,7 @@
 
 #include <sstream>
 #include <string>
+#include <vector>
 
 #include "GlobalNamespace/OVRPlugin.hpp"
 #include "GlobalNamespace/OVRHand.hpp"
@@ -99,6 +100,17 @@ void FingerSaber::_Destroy_OculusHands()
     // Regardless if destroy was initiated or not, we can assure that the handTrackingObject is nullptr,
     // as HandTracking_container is created with DontDestroyOnLoad option -> If they exists they must either exists in scene.
     handTrackingObjectsParent = nullptr;
+    rightOVRHand = nullptr;
+    leftOVRHand = nullptr;
+    rightOVRSkeleton = nullptr;
+    leftOVRSkeleton = nullptr;
+    rightOVRSkeletonRenderer = nullptr;
+    leftOVRSkeletonRenderer = nullptr;
+}
+
+bool FingerSaber::shouldInitializeHandsForScene(const std::string &sceneName) const
+{
+    return sceneName == "MainMenu" || sceneName == "GameCore";
 }
 
 void FingerSaber::_InitializeOculusHands()
@@ -109,6 +121,12 @@ void FingerSaber::_InitializeOculusHands()
     if (leftHandSkeletonMat == nullptr || rightHandSkeletonMat == nullptr)
     {
         createNewSkeletonMaterials();
+    }
+
+    const bool hasSkeletonMaterials = leftHandSkeletonMat != nullptr && rightHandSkeletonMat != nullptr;
+    if (!hasSkeletonMaterials)
+    {
+        INFO("Skeleton materials unavailable. Hand tracking will initialize without skeleton renderer materials.");
     }
 
     this->_Destroy_OculusHands();
@@ -134,10 +152,25 @@ void FingerSaber::_InitializeOculusHands()
     rightOVRSkeleton->Initialize();
 
     this->rightOVRSkeletonRenderer = rightHandTrackingGo->AddComponent<GlobalNamespace::OVRSkeletonRenderer *>();
-    rightHandSkeletonMat->SetColor("_Color", defaultRightColor);
-    rightOVRSkeletonRenderer->_skeletonMaterial = rightHandSkeletonMat;
-    rightOVRSkeletonRenderer->_systemGestureMaterial = rightHandSkeletonMat;
-    rightOVRSkeletonRenderer->Initialize();
+    if (rightOVRSkeletonRenderer)
+    {
+        if (rightHandSkeletonMat)
+        {
+            rightHandSkeletonMat->SetColor("_Color", defaultRightColor);
+            rightOVRSkeletonRenderer->_skeletonMaterial = rightHandSkeletonMat;
+            rightOVRSkeletonRenderer->_systemGestureMaterial = rightHandSkeletonMat;
+            INFO("Right skeleton renderer material assigned");
+        }
+        else
+        {
+            INFO("Right skeleton material missing; skipping custom renderer material assignment");
+        }
+        rightOVRSkeletonRenderer->Initialize();
+    }
+    else
+    {
+        INFO("Failed to add right OVRSkeletonRenderer component");
+    }
 
     INFO("Right Handtracking stuff initialized");
 
@@ -159,26 +192,66 @@ void FingerSaber::_InitializeOculusHands()
     leftOVRSkeleton->Initialize();
 
     this->leftOVRSkeletonRenderer = leftHandTrackingGo->AddComponent<GlobalNamespace::OVRSkeletonRenderer *>();
-    leftHandSkeletonMat->SetColor(("_Color"), defaultLeftColor);
-    leftOVRSkeletonRenderer->_skeletonMaterial = leftHandSkeletonMat;
-    leftOVRSkeletonRenderer->_systemGestureMaterial = leftHandSkeletonMat;
-    leftOVRSkeletonRenderer->Initialize();
+    if (leftOVRSkeletonRenderer)
+    {
+        if (leftHandSkeletonMat)
+        {
+            leftHandSkeletonMat->SetColor(("_Color"), defaultLeftColor);
+            leftOVRSkeletonRenderer->_skeletonMaterial = leftHandSkeletonMat;
+            leftOVRSkeletonRenderer->_systemGestureMaterial = leftHandSkeletonMat;
+            INFO("Left skeleton renderer material assigned");
+        }
+        else
+        {
+            INFO("Left skeleton material missing; skipping custom renderer material assignment");
+        }
+        leftOVRSkeletonRenderer->Initialize();
+    }
+    else
+    {
+        INFO("Failed to add left OVRSkeletonRenderer component");
+    }
 
     INFO("Left Handtracking stuff initialized");
 }
 
 void FingerSaber::createNewSkeletonMaterials()
 {
-    std::optional<UnityEngine::Shader *> simpleLit =
-        UnityEngine::Resources::FindObjectsOfTypeAll<UnityEngine::Shader *>().front([&](auto const &e)
-                                                                                    { return e->get_name() == "Custom/SimpleLit"; });
-    if (!simpleLit.has_value())
+    UnityEngine::Shader *shaderToUse = nullptr;
+    std::vector<std::string> shaderCandidates = {"Custom/SimpleLit", "BeatSaber/UnlitGlow", "Hidden/Internal-Colored", "Standard"};
+
+    for (auto const &shaderName : shaderCandidates)
     {
-        INFO("SimpleLit shader not found");
+        std::optional<UnityEngine::Shader *> shader =
+            UnityEngine::Resources::FindObjectsOfTypeAll<UnityEngine::Shader *>().front([&](auto const &e)
+                                                                                        { return e && e->get_name() == shaderName; });
+        if (shader.has_value())
+        {
+            shaderToUse = shader.value();
+            INFO("Skeleton shader found: {}", shaderName);
+            break;
+        }
+        INFO("Skeleton shader candidate not found: {}", shaderName);
+    }
+
+    if (!shaderToUse)
+    {
+        INFO("No suitable shader found for skeleton materials; skipping material creation");
         return;
     }
-    leftHandSkeletonMat = UnityEngine::Material::New_ctor(simpleLit.value());
-    rightHandSkeletonMat = UnityEngine::Material::New_ctor(simpleLit.value());
+
+    leftHandSkeletonMat = UnityEngine::Material::New_ctor(shaderToUse);
+    rightHandSkeletonMat = UnityEngine::Material::New_ctor(shaderToUse);
+
+    if (!leftHandSkeletonMat || !rightHandSkeletonMat)
+    {
+        INFO("Failed to create one or more skeleton materials (left: {}, right: {})", leftHandSkeletonMat != nullptr, rightHandSkeletonMat != nullptr);
+        leftHandSkeletonMat = nullptr;
+        rightHandSkeletonMat = nullptr;
+        return;
+    }
+
+    INFO("Skeleton materials created successfully");
 }
 
 void FingerSaber::ChangeRightSkeletonRendererColor(UnityEngine::Color col)
@@ -194,6 +267,12 @@ void FingerSaber::ChangeLeftSkeletonRendererColor(UnityEngine::Color col)
 
 void FingerSaber::update_LRHandIsTracked()
 {
+    if (!rightOVRHand || !leftOVRHand)
+    {
+        _oculusRHandIsTracked = false;
+        _oculusLHandIsTracked = false;
+        return;
+    }
     _oculusRHandIsTracked = rightOVRHand->IsTracked;
     _oculusLHandIsTracked = leftOVRHand->IsTracked;
 }

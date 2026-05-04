@@ -36,6 +36,7 @@ public:
     void ChangeLeftSkeletonRendererColor(UnityEngine::Color col);
 
     void createNewSkeletonMaterials();
+    bool shouldInitializeHandsForScene(const std::string &sceneName) const;
 
     inline bool getRHandClickRequested() { return _rHandClickRequested; }
     inline bool getLHandClickRequested() { return _lHandClickRequested; }
